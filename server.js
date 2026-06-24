@@ -6,7 +6,7 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// Middleware - Updated payload size to prevent 413 errors
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -33,7 +33,6 @@ app.get('/health', (req, res) => {
 
 // List models endpoint (OpenAI compatible)
 app.get('/v1/models', (req, res) => {
-  // We return a generic list so Chub AI sees valid options, but the backend will ignore them anyway
   const models = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o'].map(model => ({
     id: model,
     object: 'model',
@@ -52,8 +51,10 @@ app.post('/v1/chat/completions', async (req, res) => {
   try {
     const { model, messages, temperature, max_tokens, stream } = req.body;
     
-    // ⚡ FORCED OVERRIDE: Ignore whatever the app asks for and lock in GLM-5.1
-    const nimModel = 'z-ai/glm-5.1';
+    // ⚡ FORCED OVERRIDE: Lock in GLM-5.1
+    const nimModel = process.env.DEFAULT_MODEL || 'z-ai/glm-5.1';
+    
+    console.log(`[PROXY] Intercepted request for "${model}". Routing to NVIDIA NIM: "${nimModel}"`);
     
     // Transform OpenAI request to NIM format
     const nimRequest = {
@@ -61,9 +62,13 @@ app.post('/v1/chat/completions', async (req, res) => {
       messages: messages,
       temperature: temperature || 0.6,
       max_tokens: max_tokens || 9024,
-     extra_body: ENABLE_THINKING_MODE ? { chat_template_kwargs: { enable_thinking: true, clear_thinking: false } } : undefined,
       stream: stream || false
     };
+
+    // Only add extra_body if ENABLE_THINKING_MODE is explicitly true (Prevents 400 crashes)
+    if (ENABLE_THINKING_MODE) {
+       nimRequest.extra_body = { chat_template_kwargs: { enable_thinking: true, clear_thinking: false } };
+    }
     
     // Make request to NVIDIA NIM API
     const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
@@ -75,7 +80,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     });
     
     if (stream) {
-      // Handle streaming response with reasoning
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
@@ -98,7 +102,8 @@ app.post('/v1/chat/completions', async (req, res) => {
             try {
               const data = JSON.parse(line.slice(6));
               if (data.choices?.[0]?.delta) {
-                const reasoning = data.choices[0].delta.reasoning_content;
+                // ⚡ THE FIX: Check for BOTH reasoning property names!
+                const reasoning = data.choices[0].delta.reasoning_content || data.choices[0].delta.reasoning;
                 const content = data.choices[0].delta.content;
                 
                 if (SHOW_REASONING) {
@@ -120,7 +125,6 @@ app.post('/v1/chat/completions', async (req, res) => {
                   
                   if (combinedContent) {
                     data.choices[0].delta.content = combinedContent;
-                    delete data.choices[0].delta.reasoning_content;
                   }
                 } else {
                   if (content) {
@@ -128,8 +132,11 @@ app.post('/v1/chat/completions', async (req, res) => {
                   } else {
                     data.choices[0].delta.content = '';
                   }
-                  delete data.choices[0].delta.reasoning_content;
                 }
+                
+                // Clean up both variables so they don't break the client
+                delete data.choices[0].delta.reasoning_content;
+                delete data.choices[0].delta.reasoning;
               }
               res.write(`data: ${JSON.stringify(data)}\n\n`);
             } catch (e) {
@@ -145,17 +152,20 @@ app.post('/v1/chat/completions', async (req, res) => {
         res.end();
       });
     } else {
-      // Transform NIM response to OpenAI format with reasoning
+      // Non-streaming response
       const openaiResponse = {
         id: `chatcmpl-${Date.now()}`,
         object: 'chat.completion',
         created: Math.floor(Date.now() / 1000),
-        model: model,
+        model: nimModel,
         choices: response.data.choices.map(choice => {
           let fullContent = choice.message?.content || '';
           
-          if (SHOW_REASONING && choice.message?.reasoning_content) {
-            fullContent = '<think>\n' + choice.message.reasoning_content + '\n</think>\n\n' + fullContent;
+          // ⚡ THE FIX: Check for BOTH reasoning property names!
+          const reasoningData = choice.message?.reasoning_content || choice.message?.reasoning;
+          
+          if (SHOW_REASONING && reasoningData) {
+            fullContent = '<think>\n' + reasoningData + '\n</think>\n\n' + fullContent;
           }
           
           return {
@@ -178,7 +188,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('Proxy error:', error.message);
+    console.error('Proxy error:', error.response?.data || error.message);
     
     res.status(error.response?.status || 500).json({
       error: {
@@ -204,6 +214,4 @@ app.all('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`OpenAI to NVIDIA NIM Proxy running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Reasoning display: ${SHOW_REASONING ? 'ENABLED' : 'DISABLED'}`);
-  console.log(`Thinking mode: ${ENABLE_THINKING_MODE ? 'ENABLED' : 'DISABLED'}`);
 });
