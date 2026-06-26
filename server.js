@@ -1,4 +1,4 @@
-// server.js - Original OpenAI to NVIDIA NIM Proxy (GLM-5.1 Mode)
+// server.js - Original OpenAI to NVIDIA NIM Proxy (Kimi-k2.6 Mode)
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -19,7 +19,7 @@ const NIM_API_KEY = process.env.NIM_API_KEY;
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    service: 'OpenAI to NVIDIA NIM Proxy (Forced GLM-5.1 Mode)'
+    service: 'OpenAI to NVIDIA NIM Proxy (Forced Kimi-k2.6 Mode)'
   });
 });
 
@@ -43,8 +43,8 @@ app.post('/v1/chat/completions', async (req, res) => {
   try {
     const { model, messages, temperature, max_tokens, stream } = req.body;
     
-    // ⚡ FORCED OVERRIDE: Ignore whatever the app asks for and lock in GLM-5.1
-    const nimModel = process.env.DEFAULT_MODEL || 'z-ai/glm-5.1';
+    // ⚡ FORCED OVERRIDE: Ignore whatever the app asks for and lock in Kimi-k2.6
+    const nimModel = process.env.DEFAULT_MODEL || 'moonshotai/kimi-k2.6';
     
     console.log(`[PROXY] Intercepted request for "${model}". Routing to NVIDIA NIM: "${nimModel}"`);
     
