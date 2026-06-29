@@ -1,4 +1,3 @@
-```javascript
 // server.js - Original OpenAI to NVIDIA NIM Proxy (MiniMax-M3 Mode)
 const express = require('express');
 const cors = require('cors');
