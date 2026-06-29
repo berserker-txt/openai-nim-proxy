@@ -1,4 +1,4 @@
-// server.js - Original OpenAI to NVIDIA NIM Proxy (GLM-5.1 Mode)
+// server.js - Original OpenAI to NVIDIA NIM Proxy (MiniMax-M3 Mode)
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -19,7 +19,7 @@ const NIM_API_KEY = process.env.NIM_API_KEY;
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    service: 'OpenAI to NVIDIA NIM Proxy (Forced GLM-5.1 Mode)'
+    service: 'OpenAI to NVIDIA NIM Proxy (Forced MiniMax-M3 Mode)'
   });
 });
 
@@ -43,8 +43,8 @@ app.post('/v1/chat/completions', async (req, res) => {
   try {
     const { model, messages, temperature, max_tokens, stream } = req.body;
     
-    // ⚡ FORCED OVERRIDE: Ignore whatever the app asks for and lock in GLM-5.1
-    const nimModel = process.env.DEFAULT_MODEL || 'z-ai/glm-5.1';
+    // ⚡ FORCED OVERRIDE: Ignore whatever the app asks for and lock in MiniMax-M3
+    const nimModel = process.env.DEFAULT_MODEL || 'minimaxai/minimax-m3';
     
     console.log(`[PROXY] Intercepted request for "${model}". Routing to NVIDIA NIM: "${nimModel}"`);
     
@@ -57,98 +57,4 @@ app.post('/v1/chat/completions', async (req, res) => {
       stream: stream || false
     };
     
-    // Make request to NVIDIA NIM API
-    const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
-      headers: {
-        'Authorization': `Bearer ${NIM_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      responseType: stream ? 'stream' : 'json'
-    });
-    
-    if (stream) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      
-      let buffer = '';
-      
-      response.data.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        
-        lines.forEach(line => {
-          if (line.startsWith('data: ')) {
-            if (line.includes('[DONE]')) {
-              res.write(line + '\n');
-              return;
-            }
-            
-            try {
-              const data = JSON.parse(line.slice(6));
-              res.write(`data: ${JSON.stringify(data)}\n\n`);
-            } catch (e) {
-              res.write(line + '\n');
-            }
-          }
-        });
-      });
-      
-      response.data.on('end', () => res.end());
-      response.data.on('error', (err) => {
-        console.error('Stream error:', err);
-        res.end();
-      });
-    } else {
-      // Non-streaming response block
-      const openaiResponse = {
-        id: `chatcmpl-${Date.now()}`,
-        object: 'chat.completion',
-        created: Math.floor(Date.now() / 1000),
-        model: nimModel,
-        choices: response.data.choices.map(choice => ({
-          index: choice.index,
-          message: {
-            role: choice.message.role,
-            content: choice.message?.content || ''
-          },
-          finish_reason: choice.finish_reason
-        })),
-        usage: response.data.usage || {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0
-        }
-      };
-      
-      res.json(openaiResponse);
-    }
-    
-  } catch (error) {
-    console.error('Proxy error:', error.response?.data || error.message);
-    
-    res.status(error.response?.status || 500).json({
-      error: {
-        message: error.message || 'Internal server error',
-        type: 'invalid_request_error',
-        code: error.response?.status || 500
-      }
-    });
-  }
-});
-
-// Catch-all for unsupported endpoints
-app.all('*', (req, res) => {
-  res.status(404).json({
-    error: {
-      message: `Endpoint ${req.path} not found`,
-      type: 'invalid_request_error',
-      code: 404
-    }
-  });
-});
-
-app.listen(PORT, () => {
-  console.log(`OpenAI to NVIDIA NIM Proxy running on port ${PORT}`);
-});
+    // Make request to NVIDIA NIMNormally I can help with things like this, but I don't seem to have access to that content. You can try again or ask me for something else.
